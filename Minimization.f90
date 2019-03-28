@@ -1,7 +1,246 @@
 
+module ConfigHandler
+! This module will read form standard input or a file to assess what the program will do
+  implicit none
+  private
+  save
+  public ConfigType, Initialize
+
+  type ConfigType
+    integer							:: order
+    real(8)							:: h, convergeLimit
+	real(8), allocatable			:: x1(:)
+    character(10)					:: mode, algorithm, input, save 
+  end type
+  
+  contains
+  
+  subroutine Initialize(self)
+    type(ConfigType), intent(inout)		:: self
+
+	open(7, file = 'config.txt')
+	
+	read(7,*) self%mode
+	read(7,*) self%algorithm
+	read(7,*) self%order
+	allocate(self%x1(self%order))
+	read(7,*) self%x1
+	read(7,*) self%convergeLimit
+	read(7,*) self%h
+	read(7,*) self%input
+
+	call UserInterface(self)
+	
+  end subroutine
+
+
+  
+  subroutine UserInterface(self)
+    type(ConfigType), intent(inout)		:: self
+	character(10)						:: inputChar
+	real(8)								:: inputReal
+	
+	do
+	  print *, 'Would you like to configure Minimizer? (y/n)'
+	  read *, inputChar
+	
+	  if (inputChar == 'y') then
+	    call UserConfig(self)
+	    return
+	  elseif (inputChar == 'n') then
+	    return
+	  else
+	    print *, 'Input y or n'
+	    cycle
+	  endif
+	enddo
+  end subroutine
+
+  subroutine UserConfig(self)
+	type(ConfigType), intent(inout)		:: self
+	character(10)						:: inputChar
+	real(8)								:: inputReal
+	integer								:: inputInt, i
+	
+	do
+	  print *, ''
+	  print *, 'Welcome to minimizer configuration,'
+	  print *, 'Enter the parameter you would like to configure:'
+	  print *, '"mode" "algorithm" "order" "convergeLimit" "h" "x1"'
+	
+	  read *, inputChar
+	  
+	  if(inputChar == 'mode')then
+	    print *, 'Enter: "default" for default mode or "test" for test mode'
+		read *, inputChar
+		
+		if (inputChar == 'default' .or. inputChar == 'test') then 
+		  self%mode = inputChar
+		else
+		  print *, 'invalid argument, no new value set'
+		endif
+		
+	  elseif (inputChar == 'algorithm')then
+	    print *, 'Choose the minimization algorithm: "steep" for SteepestDescent or "conjugate" for ConjugateGradient'
+		read *, inputChar
+		if (inputChar == 'steep')then
+		  self%algorithm = 'steep'
+		elseif (inputChar == 'conjugate')then
+		  self%algorithm = 'conjugate'
+		else
+		  print *, 'That was not a valid argument'
+		endif
+		
+		
+	  elseif (inputChar == 'order')then
+	    print *, 'enter an integer value to assign the order of the function'
+		read *, inputInt
+		self%order = inputInt
+		
+	  elseif (inputChar == 'h')then
+		print *, 'enter a low real value for h'
+		read *, inputReal
+		self%h = inputReal
+		
+	  elseif (inputChar == 'x1')then
+		deallocate(self%x1)
+		allocate(self%x1(self%order))
+		do i = 1, self%order
+		  print *, 'enter a starting value for variable:', i
+		  read *, inputReal
+		  self%x1(i) = inputReal
+		enddo
+		
+	  else
+	    print *, 'That was not a valid argument'
+	  
+	  endif
+	  
+	  print *, 'Would you like to edit anything else? (y/n)'
+	    read *, inputChar
+		if(inputChar == 'y')then
+		  cycle
+		elseif(inputChar == 'n')then
+		  if(self%order /= size(self%x1))then
+		    print *, 'The order of the function and the number of x values are not equal, please reconfigure'
+			print *, self%x1, self%order
+			cycle
+		  endif
+   		  return
+		endif
+	enddo
+	
+  end subroutine
+
+end module
+
+
+
+
+module MatFunction
+! This module contains the mathematical function (Formula) which is to be minimized	
+  implicit none
+  private
+  public Formula
+
+  integer, parameter					:: order = 2
+
+contains
+
+  function Formula(x) result(y)
+    real(8), intent(in), pointer		:: x(:)
+    real(8)								:: y
+
+    y = (x(1)**2)+(2*x(1))+(cos(x(2)))
+	
+  end function
+
+end module
+
+
+
+
+module GradientCalculator
+! This module contains the subroutine which is used to calculate the gradient for the given values of x
+  use MatFunction
+  use ConfigHandler
+  implicit none
+  private
+  public CalculateGradient, CalculateHessian
+
+contains
+
+  subroutine CalculateGradient(config, Input, gradient)
+    type(ConfigType), intent(in)		:: config
+	real(8), intent(in), pointer		:: input(:)
+    real(8), pointer					:: gradient(:), x(:)
+	real(8), parameter					:: h = 0.0000001
+    real(8)								:: f(2)
+    integer	 							:: order, i, j
+
+    order = size(input)
+    allocate(gradient(order))
+	allocate(x(order))
+
+
+    do i = 1, order
+	  x = input
+      x(i) = x(i) + h
+      f(1) = Formula(x)
+	  x(i) = x(i) - 2*h
+      f(2) = Formula(x)
+	 
+	  gradient(i) = (f(1) - f(2)) / (2 * h)
+	enddo
+	
+  end subroutine
+  
+    subroutine CalculateHessian(config, input, hessian)
+	type(ConfigType), intent(in)		:: config
+	real(8), pointer					:: hessian(:,:), input(:), x(:)
+	integer								:: i, j, order, k
+	real(8)								:: h, f(4)
+	
+	order = config%order
+	h = config%h
+	
+	allocate(hessian(order,order))
+	allocate(x(order))
+	
+	hessian = 0
+	
+	do i = 1, order
+	  do j = 1, order
+	    x = input
+        x(i) = x(i) + h
+		x(j) = x(j) + h
+		
+		f(1) = Formula(x)
+		x(i) = x(i) - 2*h
+		
+		f(2) = Formula(x)
+		x(j) = x(j) - 2*h
+		
+		f(3) = Formula(x)
+		x(i) = x(i) + 2*h
+		
+		f(4) = Formula(x)
+	 
+		hessian(i,j) = (f(1) - f(2) + f(3) - f(4)) / (4 * h**2)
+	  enddo
+    enddo
+	
+  end subroutine
+  
+end module
+
+
+
+
 module SteepestDescent
 ! This module will contain the subroutines to perform minimization using the Conjugate Steepest Descent Method
   use GradientCalculator
+  use ConfigHandler
   
   implicit none
   private
@@ -9,22 +248,22 @@ module SteepestDescent
 
 contains
 
-  subroutine Steep
-	real(8)					:: convLim
-    real(8), pointer		:: gradient(:), gradientOld(:), xi(:), xiOld(:), gamma(:)
-	integer					:: iterations, i
-    
-	integer					:: order
-    order = 2
+  subroutine Steep(config)
+    type(ConfigType), intent(in)		:: config
+	real(8)								:: convLim, gamma
+    real(8), pointer					:: gradient(:), gradientOld(:), xi(:), xiOld(:)
+	integer								:: iterations, i, order
+
+    order = config%order
 	
 	allocate(xi(order))
 	allocate(xiOld(order))
 	allocate(gradient(order)) 
 	allocate(gradientOld(order))
-	allocate(gamma(order))	
 
-	xi = (/ -1.0, -3.1415 /)  	
-	convLim = 0.000001
+	xi = config%x1
+	convLim = config%convergeLimit
+	
 	gamma = 0.1
 	iterations = 0
 	xiOld = xi + 1
@@ -32,9 +271,9 @@ contains
 	do while (abs(sum(xi - xiOld)) > convLim .and. iterations < 10000)
 	  
 	  gradientOld = gradient
-	  call CalculateGradient(xi, gradient)
+	  call CalculateGradient(config, xi, gradient)
 	  
-	  if (iterations > 1) then
+	  if(iterations > 1)then
 	    gamma = (dot_product((xi-xiOld) , (gradient-gradientOld))) / sqrt(sum((gradient-gradientOld)**2))**2
 	  endif
 	  
@@ -59,142 +298,81 @@ end module
 
 module ConjugateGradient
 ! This module will contain the subroutines to perform minimization using the Conjugate Gradient Method
+  use GradientCalculator
+  use ConfigHandler
+  use MatFunction
+
   implicit none
   private
-!  public
-end module
+  public Conjugate
 
+contains
 
+  subroutine Conjugate(config)
+	type(ConfigType), intent(inout)		:: config
+    real(8)								:: convLim, alpha, beta, b(2), q(2)
+    real(8), pointer					:: hessian(:,:), gradient(:), gradientOld(:), xi(:), xiOld(:), r(:), rOld(:), a(:), p(:)
+	integer								:: iterations, i, order
+	
+	order = config%order
+	
+	allocate(xi(order))
+	allocate(xiOld(order))
+	allocate(r(order))
+	allocate(rOld(order))
+	allocate(gradient(order)) 
+	allocate(gradientOld(order))
+	allocate(a(order))
+	allocate(p(order))
 
+	xi = config%x1
+	convLim = config%convergeLimit
+	iterations = 0
+	
+	call CalculateGradient(config, xi, gradient)
 
-module ConfigHandler
-! This module will read form standard input or a file to assess what the program will do
-  implicit none
-  private
-  save
-  public ConfigType, Initialize
-
-  type ConfigType
-    integer							:: order
-    real(8)							:: h, convergeLimit
-	real(8), allocatable			:: x1(:)
-    character(10)					:: mode, algorithm, input
-  end type
-  
-  contains
-  
-  subroutine Initialize(self)
-    type(ConfigType), intent(out)		:: self
-	! integer								:: order, maxIterations
-    ! real(8)								:: h, convergeLimit
-	! real(8), allocatable				:: x1(:)
-    ! character(10)						:: mode, algorithm, input
+	call CalculateHessian(config, xi, hessian)
 	
-	open(7, file = 'config.txt')
+	b = gradient
+	r = b
+	p = r
+	q = matmul(hessian,p)
 	
-	read(7,*) self%mode
-	read(7,*) self%algorithm
-	read(7,*) self%order
-	allocate(self%x1(self%order))
-	read(7,*) self%x1
-	read(7,*) self%convergeLimit
-	read(7,*) self%input
+	alpha = dot_product(r,r)/dot_product(p,q)
 	
-	! call SetMode(self, mode)
-	! call SetAlgorithm(self, algorithm)
-	! call SetOrder(self, order)
-	! call SetConvergeLimit(self, convergeLimit)
+	xi = xi + (alpha * p)
 	
-	call UserInterface(self)
+	rOld = r
 	
-  end subroutine
-
-  subroutine SetMode(self, mode)
-	type(ConfigType), intent(out)		:: self
-	character(10)						:: mode
+	r = r - (alpha * q)
 	
-	self%mode = mode
-  end subroutine
-  
-  subroutine SetAlgorithm(self, algorithm)
-	type(ConfigType), intent(out)		:: self
-	character(10)						:: algorithm
+	do while (abs(sum(r)) > convLim .and. iterations < 10000)
+	  call CalculateHessian(config, xi, hessian)
+	  
+	  beta = (dot_product(r, r) / dot_product(rOld, rOld))
+	  
+	  p = r + (beta * p)
+	  
+	  q = matmul(hessian,p)
+	  
+	  alpha = dot_product(r,r) / dot_product(p,q)
 	
-	self%algorithm = algorithm
-  end subroutine
-  
-  subroutine SetOrder(self, order)
-    type(ConfigType), intent(out)		:: self
-	integer								:: order
+	  xiOld = xi
 	
-	self%order = order
-  end subroutine
-  
-  subroutine SetConvergeLimit(self, convergeLimit)
-	type(ConfigType), intent(out)		:: self
-    real(8)								:: convergeLimit
+	  xi = xi + alpha * p
 	
-	self%convergeLimit = convergeLimit
-  end subroutine
-  
-  subroutine UserInterface(self)
-    type(ConfigType), intent(out)		:: self
-	character(10)						:: inputChar
-	real(8)								:: inputReal
+	  rOld = r
 	
-	do
-	  print *, 'Would you like to configure Minimizer? (y/n)'
-	  read *, inputChar
-	
-	  if (inputChar == 'y') then
-	    call UserConfig(self)
-	    return
-	  elseif (inputChar == 'n') then
-	    return
-	  else
-	    print *, 'Input y or n'
-	    cycle
-	  endif
+	  r = r - alpha * q 
+	  
+	  iterations = iterations + 1
+	  
+	  print *, 'xi = ', xi
+	  print *, abs(sum(r))
 	enddo
-  end subroutine
-
-  subroutine UserConfig(self)
-	type(ConfigType), intent(out)		:: self
-	character(10)						:: inputChar
-	real(8)								:: inputReal
 	
-	do
-	  print *, ''
-	  print *, 'Welcome to minimizer configuration,'
-	  print *, 'Enter the parameter you would like to configure:'
-	  print *, '"mode" "algorithm" "order" "convergeLimit"'
-	
-	  read *, inputChar
-	  
-	  if(inputChar == 'mode') then
-	    print *, 'enter the new value'
-		read *, inputChar
-		
-	  elseif(inputChar == 'algorithm') then
-	    print *, 'enter the new value'
-		read *, inputChar
-	  
-	  else
-	  
-	  print *, 'That was not a valid argument'
-	  
-	  endif
-	  
-	  print *, 'Would you like to edit anything else? (y/n)'
-	    read *, inputChar
-		if(inputChar == 'y') then
-		  cycle
-		elseif(inputChar == 'n')then
-   		  return
-		endif
-	enddo
   end subroutine
-
+	
 end module
 
 
@@ -229,69 +407,6 @@ end module
 
 
 
-module MatFunction
-! This module contains the mathematical function (Formula) which is to be minimized	
-  implicit none
-  private
-  public Formula
-
-  integer, parameter					:: order = 2
-
-contains
-
-  function Formula(x) result(y)
-    real(8), intent(in), pointer		:: x(:)
-    real(8), allocatable				:: y(:)
-
-    allocate(y(size(x)))
-
-    y = (x(1)**2)+(2*x(1))+(cos(x(2)))
-  end function
-
-end module
-
-
-
-
-module GradientCalculator
-! This module contains the subroutine which is used to calculate the gradient for the given values of x
-  use MatFunction
-  implicit none
-  private
-  public CalculateGradient
-
-contains
-
-  subroutine CalculateGradient(Input, gradient)
-    real(8), intent(in), pointer		:: input(:)
-    real(8), intent(out), pointer		:: gradient(:)
-	real(8), parameter					:: h = 0.0000001
-    real(8), pointer					:: f(:,:), x(:)
-    integer	 							:: order, i, j
-
-    order = size(input)
-    allocate(gradient(order))
-	allocate(f(2,order))
-	allocate(x(order))
-
-
-    do i = 1, order
-	  x = input
-      x(i) = x(i) + h
-      f(1,:) = Formula(x)
-	  x(i) = x(i) - 2*h
-      f(2,:) = Formula(x)
-	 
-	  gradient(i) = (f(1,i) - f(2,i)) / (2 * h)
-	enddo
-	
-  end subroutine
-  
-end module
-
-
-
-
 Program Minimization
 ! This is the main program from which the subroutines in the program modules will be called
 use SteepestDescent
@@ -307,18 +422,14 @@ implicit none
 
   type(ConfigType)		:: config
   
-  call Steep
- ! call Initialize(config)
-  
-  ! real(8), pointer		:: gradient(:), input(:)
-  ! integer				:: order
-  ! order = 2
-  ! allocate(input(order))
-  ! input = (/ 1, 2 /)  
-  ! allocate(gradient(order)) 
-  ! call CalculateGradient(input, gradient)
-  ! print *, gradient
+  call Initialize(config)
 
+  if (config%algorithm == 'steep')then
+    call Steep(config)
+  elseif (config%algorithm == 'conjugate')then
+    call Conjugate(config)
+  endif
+  
 end Program
 
 
