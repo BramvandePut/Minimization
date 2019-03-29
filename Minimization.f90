@@ -197,6 +197,7 @@ contains
     real(8)								:: y
 
     y = (x(1)**2)+(cos(x(2)))
+	!y = 5*(x(1)**2) + 3*(x(2)**2)
 	
   end function
 
@@ -293,7 +294,7 @@ contains
 	
   end subroutine
   
-    subroutine CalculateHessian(config, input, hessian)
+  subroutine CalculateHessian(config, input, hessian)
 	type(ConfigType), intent(in)		:: config
 	real(8), pointer					:: hessian(:,:), input(:), x(:)
 	integer								:: i, j, order, k
@@ -307,27 +308,50 @@ contains
 	
 	hessian = 0
 	
-	do i = 1, order
-	  do j = 1, order
-	    x = input
-        x(i) = x(i) + h
-		x(j) = x(j) + h
+	if(config%mode == 'default')then
+	  do i = 1, order
+	    do j = 1, order
+	      x = input
+          x(i) = x(i) + h
+		  x(j) = x(j) + h
 		
-		f(1) = Formula(x)
-		x(i) = x(i) - 2*h
+		  f(1) = Formula(x)
+		  x(i) = x(i) - 2*h
 		
-		f(2) = Formula(x)
-		x(j) = x(j) - 2*h
+		  f(2) = Formula(x)
+		  x(j) = x(j) - 2*h
 		
-		f(3) = Formula(x)
-		x(i) = x(i) + 2*h
+		  f(3) = Formula(x)
+		  x(i) = x(i) + 2*h
 		
-		f(4) = Formula(x)
+		  f(4) = Formula(x)
 	 
-		hessian(i,j) = (f(1) - f(2) + f(3) - f(4)) / (4 * h**2)
+		  hessian(i,j) = (f(1) - f(2) + f(3) - f(4)) / (4 * h**2)
+		enddo
 	  enddo
-    enddo
 	
+	elseif(config%mode == 'rastrigin')then
+	  do i = 1, order
+	    do j = 1, order
+	      x = input
+          x(i) = x(i) + h
+		  x(j) = x(j) + h
+		
+		  f(1) = Rastrigin(config,x)
+		  x(i) = x(i) - 2*h
+		
+		  f(2) = Rastrigin(config,x)
+		  x(j) = x(j) - 2*h
+		
+		  f(3) = Rastrigin(config,x)
+		  x(i) = x(i) + 2*h
+		
+		  f(4) = Rastrigin(config,x)
+	 
+		  hessian(i,j) = (f(1) - f(2) + f(3) - f(4)) / (4 * h**2)
+	    enddo
+      enddo
+	endif
   end subroutine
   
 end module
@@ -452,14 +476,16 @@ print *, 'r =', r
 	  alpha = a / dot_product(p,Hp)
 print *, 'alpha =', alpha
 	  xiOld = xi
-	  xi = xi + alpha * Hp
+	  xi = xi + alpha * p
 	  
-	  r = r - alpha * Hp
+	  !r = r - alpha * Hp
+	  r = gradient - matmul(hessian,xi)
 	  aOld = a
 	  a = dot_product(r,r)
 	  
 	  p = r + a / aOld * p
 	  
+	  !norm = sqrt(sum(r**2))
 	  norm = sqrt(sum(r**2))
 
   
