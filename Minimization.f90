@@ -1,3 +1,0 @@
-Program Minimization
-
-end Program
