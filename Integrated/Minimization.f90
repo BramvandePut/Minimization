@@ -1,6 +1,10 @@
 
 module ConfigHandler
-! This module will read form standard input or a file to assess what the program will do
+! Created by: Bram van de Put, 2019
+!
+! The ConfigHandler module sets all the initial variables and constants needed to run the
+! minimizations.
+
   implicit none
   private
   save
@@ -8,9 +12,9 @@ module ConfigHandler
 
   type ConfigType
     integer                         :: order, iterationmax
-    real(8)                         :: h, convergeLimit, plotDomain, plotStep
+    real(8)                         :: h, convergeLimit, plotDomain, plotStep, gamma
     real(8), allocatable            :: x1(:)
-    character(10)                   :: mode, algorithm, direction, list, plot
+    character(10)                   :: mode, algorithm, direction, list, plot, plotVector
   end type
   
   contains
@@ -29,11 +33,13 @@ module ConfigHandler
     read(U,*) self%plot
     read(U,*) self%plotDomain
     read(U,*) self%plotStep
+    read(U,*) self%plotVector
     read(U,*) self%list 
     read(U,*) self%order
     allocate(self%x1(self%order))
     read(U,*) self%x1
     read(U,*) self%h
+    read(U,*) self%gamma
     read(U,*) self%convergeLimit
     read(U,*) self%iterationmax
 
@@ -78,23 +84,20 @@ module ConfigHandler
       print *, 'Welcome to minimizer configuration,'
       print *, 'Enter the parameter you would like to configure:'
       
-      if (self%mode == 'rastrigin')then
-        print *, '"mode" "algorithm" "direction" "plot" "list" "order" "h" "x1" "convergelimit" "iterationmax"'
-      else
+      if (self%algorithm == 'conjugate')then
         print *, '"mode" "algorithm" "direction" "plot" "list" "order" "h" "convergelimit" "iterationmax"'
+      else
+        print *, '"mode" "algorithm" "direction" "plot" "list" "order" "h" "x1" "gamma" "convergelimit" "iterationmax"'
       endif
       
       read *, inputChar
       
       if (inputChar == 'mode')then
-        print *, 'Enter: "default" for default mode or "rastrigin" for rastrigin surface mode'
+        print *, 'Enter: "default" for default mode, "rastrigin" for rastrigin surface mode or "test" to perform a unit test'
         read *, inputChar
         
-        if (inputChar == 'default')then 
+        if (inputChar == 'default' .or. inputChar == 'rastrigin' .or. inputchar == 'test')then 
           self%mode = inputChar
-        elseif (inputChar == 'rastrigin')then
-          self%mode = inputChar
-          self%x1 = 0
         else
           print *, 'invalid argument, no new value set'
         endif
@@ -103,8 +106,11 @@ module ConfigHandler
       elseif (inputChar == 'algorithm')then
         print *, 'Choose the minimization algorithm: "steep" for SteepestDescent or "conjugate" for ConjugateGradient'
         read *, inputChar
-        if (inputChar == 'steep' .or. inputChar == 'conjugate')then
+        if (inputChar == 'steep')then 
           self%algorithm = inputChar
+        elseif (inputChar == 'conjugate')then
+          self%algorithm = inputChar
+          self%x1 = 0
         else
           print *, 'Invalid argument, no new value set'
         endif
@@ -125,12 +131,21 @@ module ConfigHandler
         read *, inputChar
         if (inputChar == 'on')then
           self%plot = inputChar
+          
           print *, 'input a real number for the domain of the plot, the domain is square'
           read *, inputReal
           self%plotDomain = inputReal
+          
           print *, 'input a real number for the step size of the plot'
           read *, inputReal
           self%plotStep = inputReal
+          
+          print *, 'Toggle vector overlay: "on" or "off"'
+          read *, inputChar
+          if (inputChar == 'on' .or. inputchar == 'off')then
+            self%plotVector = inputChar
+          endif
+          
         elseif (inputChar == 'off')then
           self%plot = inputChar
         else
@@ -152,7 +167,7 @@ module ConfigHandler
         print *, 'enter an integer value to assign the order of the function'
         read *, inputInt
         self%order = inputInt
-        if (self%mode == 'rastrigin')then
+        if (self%algorithm == 'conjugate')then
           deallocate(self%x1)
           allocate(self%x1(self%order))
           self%x1 = 0
@@ -163,8 +178,12 @@ module ConfigHandler
         read *, inputReal
         self%h = inputReal
         
+      elseif (inputChar == 'gamma')then
+        print *, 'enter a real value for the step size of the SteepestDescent algorithm (enter 0 for automatic)'
+        read *, inputReal
+        self%gamma = inputReal
         
-      elseif (inputChar == 'x1' .and. self%mode /= 'rastrigin')then
+      elseif (inputChar == 'x1' .and. self%algorithm /= 'conjugate')then
         deallocate(self%x1)
         allocate(self%x1(self%order))
         do i = 1, self%order
@@ -185,7 +204,6 @@ module ConfigHandler
         read *, inputInt
         self%iterationmax = inputInt
 
-        
       else
         print *, 'Invalid argument'
       
@@ -210,10 +228,12 @@ module ConfigHandler
           write(U,*) self%plot
           write(U,*) self%plotDomain
           write(U,*) self%plotStep
+          write(U,*) self%plotVector
           write(U,*) self%list
           write(U,*) self%order
           write(U,*) self%x1
           write(U,*) self%h
+          write(U,*) self%gamma
           write(U,*) self%convergeLimit
           write(U,*) self%iterationmax
     
@@ -223,8 +243,6 @@ module ConfigHandler
         endif
     enddo
 
-    
-    
   end subroutine
 
 end module
@@ -233,7 +251,12 @@ end module
 
 
 module MatFunction
-! This module contains the mathematical function (Formula) which is to be minimized 
+! Created by: Bram van de Put, 2019
+!
+! The MatFunction module contains the mathematical function to be minimized
+! as of release: x^2 + cos(y)
+! This function may be altered from the source code as needed.
+
   implicit none
   private
   public Formula
@@ -244,7 +267,7 @@ contains
     real(8), intent(in), pointer        :: x(:)
     real(8)                             :: y
 
-    y = (x(1)**2)+(cos(x(2)))
+    y = ((1+x(1))**2)+(cos(1+x(2)))
     !y = 5*(x(1)**2) + 3*(x(2)**2)
     
   end function
@@ -255,7 +278,12 @@ end module
 
 
 module RastriginFunction
-! This module contains the mathematical function (Formula) which is to be minimized 
+! Created by: Bram van de Put, 2019
+!
+! The RastriginFunction module contains the formula for the nth order Rastrigin surface.
+! The rastrigin surface scales with the order and is therefore not dependent on manual adjustment
+! of the configuration.
+
   use ConfigHandler
   implicit none
   private
@@ -287,7 +315,13 @@ end module
 
 
 module GradientCalculator
+! Created by: Bram van de Put, 2019
+!
 ! This module contains the subroutine which is used to calculate the gradient for the given values of x
+! The GradientCalculator module contains the routines 'CalculateGradient' and 'CalculateHessian' 
+! which are used to calculate the gradient vector and the hessian matrix respectively.
+! both are based on the central difference approximation.
+
   use MatFunction
   use RastriginFunction
   use ConfigHandler
@@ -376,16 +410,15 @@ contains
           x = input
           x(i) = x(i) + h
           x(j) = x(j) + h
-        
           f(1) = Rastrigin(config,x)
+          
           x(i) = x(i) - 2*h
-        
           f(2) = Rastrigin(config,x)
+          
           x(j) = x(j) - 2*h
-        
           f(3) = Rastrigin(config,x)
+          
           x(i) = x(i) + 2*h
-        
           f(4) = Rastrigin(config,x)
      
           hessian(i,j) = (f(1) - f(2) + f(3) - f(4)) / (4 * h**2)
@@ -400,7 +433,14 @@ end module
 
 
 module SteepestDescent
-! This module will contain the subroutines to perform minimization using the Conjugate Steepest Descent Method
+! Created by: Bram van de Put, 2019
+!
+! The SteepestDescent module contains the routine 'Steep' which performs the steepest descent
+! algorithm for minimizing the chosen function.
+! The SteepestDescent algorithm takes iterative steps towards the negative gradient (direction
+! of largest decrease). This vector is multiplied by a scalar which is calculated such that the
+! minimum is not overshot, but rather the algorithm converges towards the minimum.
+
   use GradientCalculator
   use ConfigHandler
   
@@ -415,7 +455,8 @@ contains
     real(8)                             :: convLim, gamma
     real(8), pointer                    :: gradient(:), gradientOld(:), xi(:), xiOld(:)
     integer                             :: iterations, i, order, U
-
+    
+    U = 10
     open (unit=U, action='write', file='Vectors.txt', status='replace')
 
     order = config%order
@@ -428,7 +469,12 @@ contains
     xi = config%x1
     convLim = config%convergeLimit
     
-    gamma = 0.0001
+    if (config%gamma == 0)then
+      gamma = 0.1
+    else
+      gamma = config%gamma
+    endif
+    
     iterations = 0
     xiOld = xi + 1
     
@@ -438,13 +484,10 @@ contains
         print *, 'x =' ; print '(f10.4)', xi
       endif
       
-      write (U, *) xiOld, xi-xiOld
-      write (U, *) ' '
-      
       gradientOld = gradient
       call CalculateGradient(config, xi, gradient)
       
-      if(iterations > 0)then
+      if(iterations > 0 .and. config%gamma == 0)then
         gamma = (dot_product((xi-xiOld) , (gradient-gradientOld))) / sqrt(sum((gradient-gradientOld)**2))**2
       endif
       
@@ -455,6 +498,8 @@ contains
       elseif (config%direction == 'max')then
         xi = xiOld + (gamma * gradient)
       endif
+    
+      write (U, *) xiOld, xi-xiOld
     
       iterations = iterations + 1
       
@@ -472,7 +517,13 @@ end module
 
 
 module ConjugateGradient
-! This module will contain the subroutines to perform minimization using the Conjugate Gradient Method
+! Created by: Bram van de Put, 2019
+!
+! The ConjugateGradient module contains the routine 'Conjugate' which performs the conjugate
+! gradient algorithm for minimizing the chosen function.
+! The ConjugateGradient algorithm takes iterative steps based on the direction of largest 
+! decrease, Compared to the steepest descent algorithm though, each subsequent direction is 
+! chosen to be orthogonal to each previous step.
   use GradientCalculator
   use ConfigHandler
   use MatFunction
@@ -487,12 +538,16 @@ contains
     type(ConfigType), intent(inout)     :: config
     real(8)                             :: convLim, alpha, beta, a, aOld, norm
     real(8), pointer                    :: hessian(:,:), gradient(:)
-    real(8), pointer                    :: xi(:), r(:), p(:), Hp(:)
-    integer                             :: iterations, i, order
+    real(8), pointer                    :: xi(:), xiOld(:), r(:), p(:), Hp(:)
+    integer                             :: iterations, i, order, U
+    
+    U = 10
+    open (unit=U, action='write', file='Vectors.txt', status='replace')
     
     order = config%order
     
     allocate(xi(order))
+    allocate(xiOld(order))
     allocate(r(order))
     allocate(gradient(order))
     allocate(p(order))
@@ -503,58 +558,65 @@ contains
     
     call CalculateGradient(config, xi, gradient)
     call CalculateHessian(config, xi, hessian)
-     
-    r = gradient - matmul(hessian, xi)
+
+    r = matmul(hessian, xi) - gradient
     norm = sqrt(sum(r**2))
     
     iterations = 0
     
-    p = r
-    
+    p = -r
+    xiOld = xi+1
     a = dot_product(r,r)
 
     do while (norm > convLim .and. iterations < config%iterationmax)
-    if (config%list == 'on')then
-     print *, 'iteration', iterations
-     print *, 'x =' ; print '(f10.4)', xi
-    endif  
+      if (config%list == 'on')then
+        print *, 'iteration', iterations
+        print *, 'x =' ; print '(f10.4)', xi
+      endif
+
       Hp = matmul(hessian, p)
       alpha = a / dot_product(p,Hp)
-
+      
+      xiOld = xi
       xi = xi + alpha * p
-
-      r = gradient - matmul(hessian,xi)
+      
+      write (U, *) xiOld, xi-xiOld
+      
+      !r = gradient - matmul(hessian,xi)
+      r = r + alpha * Hp
+      
       aOld = a
       a = dot_product(r,r)
       
-      p = r + a / aOld * p
+      beta = a/aOld
+      
+      !p = r + a / aOld * p
+      p = -r + beta * p
 
       norm = sqrt(sum(r**2))
 
       iterations = iterations + 1
+      
     enddo
-    
+
     print *, '# of iterations until convergence = ', iterations
     print *, 'location of local minimum = ' ; print '(f10.4)', xi
+        
+    close(U)
   end subroutine
-    
-    
-end module
-
-
-
-
-module OutputWriter
-! This module will contain the subroutines to write output to standard output or a file as defined
-  implicit none
-  private
-!  public
+  
 end module
 
 
 
 
 module PlotModule
+! Created by: Bram van de Put, 2019
+!
+! The PlotModule module contains the routine 'plot' which creates a surface plot and overlaps it
+! with the minimization steps as vectors. The plot function is only enabled for functions of 2nd
+! order. Use of the plot function requires gnuplot to be installed.
+
   use MatFunction
   use RastriginFunction
   use ConfigHandler
@@ -614,12 +676,17 @@ contains
     do j = 1, length
       write (U, *) x(2,i), x(1,j), z(j,i)
     enddo
-         write (U, *) ' '
+    write (U, *) ' '
   end do
 
   close (U)
-    
-  Gnu = 'gnuplot -p contour.plt'
+  
+  if (config%plotVector == 'on')then
+    Gnu = 'gnuplot -p PlotVec.plt'
+  else
+    Gnu = 'gnuplot -p Plot.plt'
+  endif
+  
   call system(Gnu)
   
   end subroutine
@@ -629,51 +696,103 @@ end module
 
 
 
-module Logger
-  implicit none
-  private
-!  public 
-end module
-
-
-
-
 module Testing
-! This module will contain the subroutines used to perform tests on the program
+! Created by: Bram van de Put, 2019
+!
+! The Testing module performs unit tests on the routines: CalculateGradient and CalculateHessian.
+! The tests are performed by initializing the settings and checking the output of the program
+
+  use ConfigHandler
+  use GradientCalculator
+  use SteepestDescent
+  use ConjugateGradient
+  
   implicit none
   private
-!  Public
+  Public Test
+
+contains
+  
+  subroutine Test(config)
+    type(ConfigType)      :: config
+    real(8), pointer      :: x(:), gradient(:), hessian(:,:)
+    real(8), parameter    :: limit = 0.01
+    
+    print *, 'Performing unit test'
+    
+    config%mode                         = 'rastrigin'
+    config%algorithm                    = 'steep'
+    config%direction                    = 'min'
+    config%plot                         = 'off'
+    config%plotDomain                   = 5
+    config%plotStep                     = 0.1
+    config%plotVector                   = 'off'
+    config%list                         = 'off'
+    config%order                        = 2
+    deallocate(config%x1)
+    allocate(config%x1(config%order))
+    config%x1                           = (/1,1/)
+    config%h                            = 0.001
+    config%convergeLimit                = 0.000000001
+    config%iterationmax                 = 30
+    
+    allocate(x(config%order))
+    x = config%x1
+    
+    call CalculateGradient(config, x, gradient)
+    call CalculateHessian(config, x, hessian)
+    
+    if (sum(gradient-(/2,2/)) < limit)then
+      print *, 'Routine CalculateHessian PASS'
+    endif
+    if (sum(hessian-reshape((/396.779,0.0,0.0,396.779/),(/2,2/))) < limit)then
+      print *, 'Routine CalculateGradient PASS'
+    endif
+  
+  end subroutine
+  
 end module
 
 
 
 
 Program Minimization
-! This is the main program from which the subroutines in the program modules will be called
-use SteepestDescent
-use ConjugateGradient
-use ConfigHandler
-use OutputWriter
-use PlotModule
-use Logger
-use Testing
-use GradientCalculator
-use Matfunction
+! Created by: Bram van de Put, 2019
+!
+! This is the main program from which the subroutines in the program modules will be called.
 
-implicit none
+  use SteepestDescent
+  use ConjugateGradient
+  use ConfigHandler
+  use PlotModule
+  use Testing
+
+  implicit none
 
   type(ConfigType)      :: config
   
   call Initialize(config)
 
-  if (config%algorithm == 'steep') then
+  if (config%algorithm == 'steep' .and. config%mode /= 'test') then
+  Print *, ' '
+  print *, 'Performing SteepestDescent minimization on function: ', config%mode
     call Steep(config)
-  elseif (config%algorithm == 'conjugate')then
+  elseif (config%algorithm == 'conjugate' .and. config%mode /= 'test')then
+  Print *, ' '
+  print *, 'Performing ConjugateGradient minimization on function: ', config%mode
     call Conjugate(config)
   endif
   
-  if (config%order == 2 .and. config%plot == 'on') then
-    call Plot(config)
+  if (config%mode == 'test')then
+    call Test(config)
+  endif
+  
+  if (config%plot == 'on') then
+    if (config%order == 2) then
+      call Plot(config)
+    else
+      print *, 'The order is not equal to 2, plotting can not be performed'
+    endif
   endif
   
 end Program

@@ -1,4 +1,4 @@
-# contour.plt
+# PlotVec.plt
 
 set view map
 set isosample 40,40
